@@ -34,8 +34,9 @@
 </template>
 
 <script>
-// IMPORT CONFIG: Pull map methods directly from your installed Vuex module
 import { mapGetters, mapActions } from 'vuex';
+// Import your fresh database service module
+import gameService from '../services/gameServices';
 
 export default {
   name: "JumpGame",
@@ -49,14 +50,12 @@ export default {
       bgMusic: null,
       isMusicPlaying: false,
       
-      // Path parameters optimized directly for Webpack module bundlers
       jumpSoundSrc: require('@/assets/sound/Jump.mp3'),
       pointSoundSrc: require('@/assets/sound/Point.mp3'),
       bgMusicSrc: require('@/assets/sound/background.mp3')
     };
   },
   computed: {
-    // GETTERS MAPPING: Binds your global variables straight into template text placeholders
     ...mapGetters(['currentScore', 'currentDifficulty', 'personalBest'])
   },
   mounted() {
@@ -69,7 +68,6 @@ export default {
     this.stopMusic();
   },
   methods: {
-    // ACTIONS MAPPING: Inherits core data manipulation pipelines out of your store folder
     ...mapActions(['addScore', 'changeDifficulty', 'resetGameStore']),
 
     startGame() {
@@ -78,37 +76,24 @@ export default {
     handleKeyDown(event) {
       if (event.code === "Space") {
         event.preventDefault(); 
-        
         if (this.gameOver) return;
-
-        if (!this.isMusicPlaying) {
-          this.playMusic();
-        }
-        
-        if (!this.isJumping) {
-          this.jump();
-        }
+        if (!this.isMusicPlaying) this.playMusic();
+        if (!this.isJumping) this.jump();
       }
     },
     jump() {
       this.isJumping = true;
       this.playSound('jump');
-
-      setTimeout(() => {
-        this.isJumping = false;
-      }, 600);
+      setTimeout(() => { this.isJumping = false; }, 600);
     },
     gameLoop() {
       if (this.gameOver) return;
       this.obstacleX -= this.speed;
-
       if (this.obstacleX < -20) {
         this.obstacleX = 600;
         this.incrementScore();
       }
-
       this.checkCollision();
-
       if (!this.gameOver) {
         this.animationFrameId = requestAnimationFrame(this.gameLoop);
       }
@@ -128,44 +113,46 @@ export default {
         this.gameOver = true;
         cancelAnimationFrame(this.animationFrameId);
         this.stopMusic(); 
+        
+        // API TRIGGER: Prompts user to upload performance values straight to the cloud server
+        this.handleGameCompletion();
       }
     },
+    async handleGameCompletion() {
+      // Small timeout lets the Game Over screen overlay draw before opening the blocking prompt box
+      setTimeout(async () => {
+        const name = prompt(`💥 Game Over! You scored ${this.currentScore} points. Enter your initials to save to the leaderboard:`);
+        if (name) {
+          try {
+            await gameService.submitHighScore(name, this.currentScore);
+            alert("Score successfully synced to database server logs!");
+          } catch (e) {
+            alert("Network connection error. Score kept locally.");
+          }
+        }
+      }, 100);
+    },
     incrementScore() {
-      // Dispatches store action to calculate points centrally
       this.addScore();
       this.playSound('score');
-
-      // Uses computed store outputs to scale game movement and advance levels
       if (this.currentScore % 4 === 0) {
         this.speed += 1.5;
-        const nextLevel = this.currentDifficulty + 1;
-        this.changeDifficulty(nextLevel);
+        this.changeDifficulty(this.currentDifficulty + 1);
       }
     },
     playSound(soundName) {
-      let targetSrc = "";
-
-      if (soundName === 'jump') {
-        targetSrc = this.jumpSoundSrc;
-      } else if (soundName === 'score') {
-        targetSrc = this.pointSoundSrc;
-      }
-
+      let targetSrc = soundName === 'jump' ? this.jumpSoundSrc : this.pointSoundSrc;
       if (targetSrc) {
         const audio = new Audio(targetSrc);
         audio.volume = 0.4;
-        audio.play().catch(err => console.log("SFX playback blocked:", err));
+        audio.play().catch(() => {});
       }
     },
     playMusic() {
       this.bgMusic = new Audio(this.bgMusicSrc);
       this.bgMusic.loop = true;
-      this.bgMusic.volume = 1;
-      this.bgMusic.play()
-        .then(() => {
-          this.isMusicPlaying = true;
-        })
-        .catch(err => console.log("BGM playback blocked:", err));
+      this.bgMusic.volume = 0.2;
+      this.bgMusic.play().then(() => { this.isMusicPlaying = true; }).catch(() => {});
     },
     stopMusic() {
       if (this.bgMusic) {
@@ -175,7 +162,6 @@ export default {
       }
     },
     resetGame() {
-      // Cleans store states synchronously back to initial settings
       this.resetGameStore();
       this.gameOver = false;
       this.isJumping = false;
